@@ -7,7 +7,7 @@
   "author": "Leonardo Galli",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Leo00703/pi-local-server.git"
+    "url": "git+https://github.com/Leo00703/pi-local-server.git"
   },
   "homepage": "https://github.com/Leo00703/pi-local-server#readme",
   "keywords": [

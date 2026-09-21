@@ -62,17 +62,11 @@ Cache: `~/.pi/agent/pi-local-server-cache.json` (override dir with `PI_CODING_AG
 
 ## Install
 
-Add to your Pi agent package:
-
-```json
-{
-  "dependencies": {
-    "pi-local-server": "file:/path/to/pi-local-server"
-  }
-}
+```bash
+pi install npm:pi-local-server
 ```
 
-The `pi.extensions` entry (`./extensions/pi-local-server/index.ts`) is already declared in `package.json`.
+Verify with `pi list`, update with `pi update npm:pi-local-server`. Alternative from source: `pi install git:github.com/Leo00703/pi-local-server`.
 
 ## Notes / limits
 

@@ -4,6 +4,12 @@
   "description": "Pi extension that auto-discovers local LLM servers on your LAN first, then Tailscale, and registers each as its own Pi provider with dynamic models + context windows.",
   "type": "module",
   "license": "MIT",
+  "author": "Leonardo Galli",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Leo00703/pi-local-server.git"
+  },
+  "homepage": "https://github.com/Leo00703/pi-local-server#readme",
   "keywords": [
     "pi-package",
     "pi",

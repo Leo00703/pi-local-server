@@ -1,0 +1,47 @@
+{
+  "Self": {
+    "HostName": "laptop",
+    "DNSName": "laptop.example.ts.net.",
+    "TailscaleIPs": [
+      "100.64.0.1",
+      "fd7a:115c:a1e0::1"
+    ],
+    "Online": true
+  },
+  "Peer": {
+    "nodekey:aaa": {
+      "HostName": "DESKTOP",
+      "DNSName": "desktop.example.ts.net.",
+      "TailscaleIPs": [
+        "100.64.0.2",
+        "fd7a:115c:a1e0::2"
+      ],
+      "Online": true,
+      "CurAddr": "192.168.1.50:41641"
+    },
+    "nodekey:bbb": {
+      "HostName": "phone",
+      "DNSName": "phone.example.ts.net.",
+      "TailscaleIPs": [
+        "100.64.0.3",
+        "fd7a:115c:a1e0::3"
+      ],
+      "Online": false
+    },
+    "nodekey:ccc": {
+      "HostName": "nas",
+      "DNSName": "nas.example.ts.net.",
+      "TailscaleIPs": [
+        "fd7a:115c:a1e0::4"
+      ],
+      "Online": true,
+      "CurAddr": ""
+    },
+    "nodekey:ddd": {
+      "HostName": "noips",
+      "DNSName": "",
+      "TailscaleIPs": [],
+      "Online": true
+    }
+  }
+}

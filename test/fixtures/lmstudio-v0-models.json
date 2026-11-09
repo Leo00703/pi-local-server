@@ -1,0 +1,55 @@
+{
+  "data": [
+    {
+      "id": "loaded-llm",
+      "object": "model",
+      "type": "llm",
+      "publisher": "publisher-a",
+      "arch": "arch-loaded",
+      "compatibility_type": "gguf",
+      "quantization": "Q8_0",
+      "state": "loaded",
+      "max_context_length": 262144,
+      "loaded_context_length": 50176,
+      "capabilities": [
+        "tool_use"
+      ]
+    },
+    {
+      "id": "unloaded-llm",
+      "object": "model",
+      "type": "llm",
+      "publisher": "publisher-b",
+      "arch": "arch-unloaded",
+      "compatibility_type": "gguf",
+      "state": "not-loaded",
+      "max_context_length": 1048576
+    },
+    {
+      "id": "vision-llm",
+      "object": "model",
+      "type": "vlm",
+      "publisher": "publisher-c",
+      "arch": "arch-vision",
+      "compatibility_type": "gguf",
+      "quantization": "IQ2_XS",
+      "state": "not-loaded",
+      "max_context_length": 262144,
+      "capabilities": [
+        "tool_use"
+      ]
+    },
+    {
+      "id": "text-embedding-test",
+      "object": "model",
+      "type": "embeddings",
+      "publisher": "publisher-d",
+      "arch": "arch-text",
+      "compatibility_type": "gguf",
+      "quantization": "Q8_0",
+      "state": "not-loaded",
+      "max_context_length": 262144
+    }
+  ],
+  "object": "list"
+}

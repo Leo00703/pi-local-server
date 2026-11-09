@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 export type ServerType =
   | "llamacpp"
+  | "strata"
   | "lmstudio"
   | "ollama"
   | "vllm"
@@ -39,6 +40,8 @@ export const SERVER_DEFS: ServerDef[] = [
   { type: "vllm", label: "vLLM", ports: [8000], priority: 4 },
   { type: "sglang", label: "SGLang", ports: [30000, 30010], priority: 5 },
   { type: "jan", label: "Jan", ports: [1337], priority: 6 },
+  // Strata speaks llama.cpp's dialect (/props, /v1/models meta.n_ctx); 8095 is its own default port.
+  { type: "strata", label: "Strata", ports: [8080, 8095], priority: 7 },
   // Extras / generic OpenAI-compatible (checked after the big ones)
   { type: "llamaswap", label: "llama-swap", ports: [8080], priority: 20 },
   { type: "localai", label: "LocalAI", ports: [8080], priority: 21 },
@@ -66,15 +69,34 @@ export interface DiscoveredServer {
   baseUrl: string; // e.g. http://192.168.1.10:8080/v1
   latencyMs: number;
   source: "localhost" | "lan" | "tailscale" | "config" | "cache";
+  /** Human-readable peer name (e.g. Tailscale hostname) shown in the provider name. */
+  hostName?: string;
+}
+
+/**
+ * Where a model's context window came from.
+ * - `server`:      the running server reported it (e.g. llama.cpp `/props` n_ctx) — exact.
+ * - `native-api`:  a vendor API reported it (Ollama `/api/show`, LM Studio) — exact.
+ * - `launch-args`: parsed from the server's launch arguments (`--ctx-size`) — exact.
+ * - `model-max`:   the model's training/maximum context; the server may run with less.
+ * - `estimated`:   nothing advertised; `PI_LOCAL_SERVER_DEFAULT_CTX` fallback.
+ */
+export type ContextSource = "server" | "native-api" | "launch-args" | "model-max" | "estimated";
+
+/** True when the context window is what the server will really use. */
+export function isExactContext(source: ContextSource): boolean {
+  return source === "server" || source === "native-api" || source === "launch-args";
 }
 
 export interface DiscoveredModel {
   id: string;
   name?: string;
   contextWindow: number;
-  contextSource: "server" | "native-api" | "estimated";
+  contextSource: ContextSource;
   maxTokens: number;
   reasoning: boolean;
+  /** Model accepts image input (advertised by the server). */
+  vision?: boolean;
 }
 
 export interface LocalServerConfig {
@@ -122,16 +144,47 @@ function parseContextOverridesEnv(value: string | undefined): Record<string, num
   return out;
 }
 
-export function loadConfig(): LocalServerConfig {
-  const env = process.env;
+/** Settings an adapter can pass explicitly (e.g. OpenCode plugin options) on top of the environment. */
+export interface ConfigOverrides {
+  hosts?: string[];
+  apiKey?: string;
+  apiKeys?: Record<string, string>;
+  contextOverrides?: Record<string, number>;
+  disable?: string[];
+  defaultContextWindow?: number;
+  defaultMaxTokens?: number;
+  lan?: boolean;
+  tailscale?: boolean;
+}
+
+export function loadConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  overrides: ConfigOverrides = {},
+): LocalServerConfig {
+  const base = loadEnvConfig(env);
+  return {
+    ...base,
+    extraHosts: [...new Set([...base.extraHosts, ...(overrides.hosts ?? [])])],
+    disabledTypes: [...base.disabledTypes, ...((overrides.disable ?? []) as ServerType[])],
+    apiKey: overrides.apiKey ?? base.apiKey,
+    perServerApiKeys: { ...base.perServerApiKeys, ...(overrides.apiKeys ?? {}) },
+    contextOverrides: { ...base.contextOverrides, ...(overrides.contextOverrides ?? {}) },
+    defaultContextWindow: overrides.defaultContextWindow ?? base.defaultContextWindow,
+    defaultMaxTokens: overrides.defaultMaxTokens ?? base.defaultMaxTokens,
+    enableLanScan: overrides.lan ?? base.enableLanScan,
+    enableTailscale: overrides.tailscale ?? base.enableTailscale,
+  };
+}
+
+function loadEnvConfig(env: NodeJS.ProcessEnv): LocalServerConfig {
   return {
     timeoutMs: Number(env.PI_LOCAL_SERVER_TIMEOUT_MS ?? 700),
     detailTimeoutMs: Number(env.PI_LOCAL_SERVER_DETAIL_TIMEOUT_MS ?? 4000),
     extraHosts: parseListEnv(env.PI_LOCAL_SERVER_HOSTS),
     disabledTypes: parseListEnv(env.PI_LOCAL_SERVER_DISABLE).map((s) => s as ServerType),
     defaultContextWindow: Number(env.PI_LOCAL_SERVER_DEFAULT_CTX ?? 32768),
-    defaultMaxTokens: Number(env.PI_LOCAL_SERVER_DEFAULT_MAX_TOKENS ?? 4096),
-    apiKey: env.PI_LOCAL_SERVER_API_KEY ?? "local",
+    defaultMaxTokens: Number(env.PI_LOCAL_SERVER_DEFAULT_MAX_TOKENS ?? 32768),
+    apiKey: env.PI_LOCAL_SERVER_API_KEY ?? PLACEHOLDER_API_KEY,
     // e.g. PI_LOCAL_SERVER_API_KEYS="192.168.1.10:8080=sk-...,myhost:1234=key"
     perServerApiKeys: parseMapEnv(env.PI_LOCAL_SERVER_API_KEYS),
     // e.g. PI_LOCAL_SERVER_CTX_OVERRIDES="llama-3.1-8b=131072,192.168.1.10:8080/model=32768"
@@ -161,17 +214,44 @@ export function providerIdFor(server: DiscoveredServer): string {
 }
 
 export function providerNameFor(server: DiscoveredServer): string {
-  return `${server.label} (${server.host}:${server.port})`;
+  const where = server.hostName && server.hostName !== server.host
+    ? `${server.hostName} ${server.host}:${server.port}`
+    : `${server.host}:${server.port}`;
+  return `${server.label} (${where})`;
 }
 
-/** Per-server API key lookup: `host:port` exact match wins, else global default. */
+export const PLACEHOLDER_API_KEY = "local";
+
+export function isLoopbackHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, "");
+  return h === "localhost" || h === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
+}
+
+/**
+ * API key to present to `host:port`.
+ *
+ * A real key is only ever sent where the user pointed it: an exact `host:port` entry in
+ * PI_LOCAL_SERVER_API_KEYS, or the global PI_LOCAL_SERVER_API_KEY for loopback and for
+ * hosts listed in PI_LOCAL_SERVER_HOSTS. Every other address that auto-discovery happens
+ * to find (ARP neighbours, other Tailscale peers, ...) only ever sees the placeholder, so a
+ * key can never leak to a random device on the network.
+ */
 export function apiKeyFor(
   host: string,
   port: number,
   config: LocalServerConfig,
 ): string {
-  return config.perServerApiKeys[`${host}:${port}`] ?? config.apiKey;
+  const exact = config.perServerApiKeys[`${host}:${port}`];
+  if (exact) return exact;
+  const trusted = isLoopbackHost(host) || config.extraHosts.includes(host);
+  return trusted ? config.apiKey : PLACEHOLDER_API_KEY;
 }
+
+/**
+ * Bump when the shape or meaning of cached models changes, so entries written
+ * by older versions (wrong ctx / maxTokens) are discarded instead of restored.
+ */
+export const CACHE_VERSION = 2;
 
 export function cacheFilePath(): string {
   return join(getAgentDir(), "pi-local-server-cache.json");

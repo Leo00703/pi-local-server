@@ -1,79 +1,52 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { loadCache, saveCache } from "../../core/cache.js";
 import {
-  SERVER_DEFS,
   apiKeyFor,
   cacheFilePath,
+  isExactContext,
   loadConfig,
   providerIdFor,
   providerNameFor,
   type DiscoveredModel,
   type DiscoveredServer,
   type LocalServerConfig,
-} from "./config.js";
-import {
-  getArpLiveHosts,
-  getTailscaleHosts,
-  lanCandidates,
-  localhostCandidates,
-  localSlash24Bases,
-  mapLimit,
-  probeMany,
-  slash24Candidates,
-  uniquePorts,
-  type ExecFn,
-  type LiveOrigin,
-} from "./discovery.js";
-import { discoverModels, fingerprint } from "./detectors.js";
+  type ServerType,
+} from "../../core/config.js";
+import { probeMany, type ExecFn } from "../../core/discovery.js";
+import { discoverModels, fingerprint } from "../../core/detectors.js";
+import { scanAll, scanLocal, type FoundServer, type ScanContext } from "../../core/scan.js";
 
 interface ProviderRecord {
   server: DiscoveredServer;
   models: DiscoveredModel[];
 }
 
-const COMMON_FALLBACK_PORTS = [8080, 1234, 11434, 8000, 1337, 30000, 4000, 5000, 2242];
+/** Engines known to honour `stream_options.include_usage` (exact token accounting drives compaction). */
+const STREAM_USAGE_TYPES = new Set<ServerType>(["llamacpp", "lmstudio", "ollama", "vllm", "sglang"]);
 
-interface CacheEntry {
-  server: DiscoveredServer;
-  models: DiscoveredModel[];
+function sameModels(a: DiscoveredModel[], b: DiscoveredModel[]): boolean {
+  if (a.length !== b.length) return false;
+  const key = (m: DiscoveredModel) =>
+    `${m.id}|${m.contextWindow}|${m.maxTokens}|${m.vision ? 1 : 0}|${m.reasoning ? 1 : 0}`;
+  const left = new Set(a.map(key));
+  return b.every((m) => left.has(key(m)));
 }
 
-async function loadCache(): Promise<CacheEntry[]> {
-  try {
-    const text = await readFile(cacheFilePath(), "utf8");
-    const parsed = JSON.parse(text) as { entries?: CacheEntry[] };
-    if (!Array.isArray(parsed.entries)) return [];
-    return parsed.entries.filter(
-      (e) => e && typeof e === "object" && e.server && Array.isArray(e.models),
-    );
-  } catch {
-    return [];
-  }
-}
-
-async function saveCache(records: Map<string, ProviderRecord>): Promise<void> {
-  try {
-    const entries = [...records.values()].map(({ server, models }) => ({ server, models }));
-    await mkdir(dirname(cacheFilePath()), { recursive: true });
-    await writeFile(cacheFilePath(), JSON.stringify({ savedAt: Date.now(), entries }, null, 2));
-  } catch {
-    // Cache is best-effort only.
-  }
-}
-
-function toProviderModels(models: DiscoveredModel[]) {
+function toProviderModels(models: DiscoveredModel[], type: ServerType) {
   return models.map((m) => ({
     id: m.id,
     name: m.name ?? m.id,
     reasoning: m.reasoning,
-    input: ["text"] as ["text"],
+    input: (m.vision ? ["text", "image"] : ["text"]) as ("text" | "image")[],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: m.contextWindow,
     maxTokens: m.maxTokens,
     compat: {
+      supportsStore: false,
       supportsDeveloperRole: false,
       supportsReasoningEffort: false,
+      maxTokensField: "max_tokens" as const,
+      ...(STREAM_USAGE_TYPES.has(type) ? { supportsUsageInStreaming: true } : {}),
     },
   }));
 }
@@ -82,171 +55,107 @@ export default async function (pi: ExtensionAPI) {
   const config: LocalServerConfig = loadConfig();
   const records = new Map<string, ProviderRecord>();
   let backgroundRunning = false;
+  // Tailscale peer names, keyed by the address we probe, for readable provider names.
+  const hostNames = new Map<string, string>();
 
   const execFn: ExecFn = async (cmd, args) => {
     const res = (await pi.exec(cmd, args, { timeout: 5000 })) as { stdout?: unknown };
     return { stdout: typeof res.stdout === "string" ? res.stdout : "" };
   };
 
-  function registerLive(
-    live: LiveOrigin,
-    source: DiscoveredServer["source"],
-    models: DiscoveredModel[],
-  ): string | null {
-    if (models.length === 0) return null;
-    const fp = fingerprint(live);
-    if (config.disabledTypes.includes(fp.type)) return null;
-    const server: DiscoveredServer = {
-      type: fp.type,
-      label: fp.label,
-      host: live.host,
-      port: live.port,
-      origin: live.origin,
-      baseUrl: `${live.origin}/v1`,
-      latencyMs: live.latencyMs,
-      source,
-    };
-    const providerId = providerIdFor(server);
-    const serverKey = `${server.host}:${server.port}`;
-    records.set(providerId, { server, models });
+  const persist = () =>
+    saveCache(cacheFilePath(), [...records.values()].map(({ server, models }) => ({ server, models })));
 
-    // Dynamic refresh: re-probe this origin on model refresh (no hardcoding).
+  /**
+   * (Re)register a provider from its current record. Used for live discovery, cache
+   * restore and dynamic refresh, so all three behave identically.
+   */
+  function publishProvider(providerId: string): void {
+    const rec = records.get(providerId);
+    if (!rec) return;
+    const { server } = rec;
     pi.registerProvider(providerId, {
       name: providerNameFor(server),
       baseUrl: server.baseUrl,
       apiKey: apiKeyFor(server.host, server.port, config),
       api: "openai-completions",
-      models: toProviderModels(models),
+      models: toProviderModels(rec.models, server.type),
       async refreshModels({ signal }: { signal: AbortSignal }) {
         try {
-          const hits = await probeMany(
-            [{ host: server.host, port: server.port }],
-            config,
-            signal,
-            4,
-          );
-          if (hits.length === 0) return toProviderModels(models);
-          const fresh = await discoverModels(hits[0]!, fp.type, serverKey, config, signal);
-          if (fresh.length === 0) return toProviderModels(models);
-          records.set(providerId, { server, models: fresh });
-          return toProviderModels(fresh);
+          if ((await refreshRecord(providerId, signal)).changed) await persist();
         } catch {
-          return toProviderModels(models);
+          // keep the last known models
         }
+        const current = records.get(providerId) ?? rec;
+        return toProviderModels(current.models, server.type);
       },
     });
-    return providerId;
   }
 
-  async function resolveLive(
-    live: LiveOrigin,
-    source: DiscoveredServer["source"],
+  /**
+   * Re-read a server's models from the server itself. The context window is whatever the
+   * server is running with *right now* (it changes every time a model is reloaded with a
+   * different --ctx-size / context length), so nothing here is trusted from an earlier run.
+   * Unreachable or empty answers keep the last known models.
+   */
+  async function refreshRecord(
+    providerId: string,
     signal?: AbortSignal,
-  ): Promise<string | null> {
-    const fp = fingerprint(live);
-    if (config.disabledTypes.includes(fp.type)) return null;
-    const serverKey = `${live.host}:${live.port}`;
+  ): Promise<{ changed: boolean; before?: DiscoveredModel[]; after?: DiscoveredModel[] }> {
+    const rec = records.get(providerId);
+    if (!rec) return { changed: false };
+    const { server } = rec;
+    const hits = await probeMany([{ host: server.host, port: server.port }], config, signal, 4);
+    const live = hits[0];
+    // A different engine now answers on this port: a rescan will register it properly.
+    if (!live || fingerprint(live).type !== server.type) return { changed: false };
+    const fresh = await discoverModels(live, server.type, `${server.host}:${server.port}`, config, signal);
+    if (fresh.length === 0) return { changed: false };
+    const changed = !sameModels(rec.models, fresh);
+    if (changed) records.set(providerId, { server, models: fresh });
+    return { changed, before: rec.models, after: fresh };
+  }
+
+  const lastChecked = new Map<string, number>();
+
+  /** Before the agent uses a local model, make sure its context window is still what the server runs. */
+  async function refreshActive(
+    model: { provider?: string; id?: string } | undefined,
+    minIntervalMs: number,
+    notify?: (msg: string) => void,
+  ): Promise<void> {
+    const providerId = model?.provider;
+    if (!providerId || !records.has(providerId)) return;
+    const now = Date.now();
+    if (now - (lastChecked.get(providerId) ?? 0) < minIntervalMs) return;
+    lastChecked.set(providerId, now);
     try {
-      const models = await discoverModels(live, fp.type, serverKey, config, signal);
-      return registerLive(live, source, models);
+      const r = await refreshRecord(providerId, AbortSignal.timeout(3000));
+      if (!r.changed) return;
+      publishProvider(providerId);
+      void persist();
+      const was = r.before?.find((m) => m.id === model.id);
+      const is = r.after?.find((m) => m.id === model.id);
+      if (was && is && was.contextWindow !== is.contextWindow) {
+        notify?.(`pi-local-server: ${model.id} context window ${was.contextWindow} → ${is.contextWindow}`);
+      }
     } catch {
-      return null;
+      // never block the agent on a refresh
     }
   }
 
-  async function fastScan(signal?: AbortSignal): Promise<number> {
-    const enabled = SERVER_DEFS.filter((d) => !config.disabledTypes.includes(d.type));
-    const ports = uniquePorts(enabled.map((d) => d.ports));
-    const candidates = [
-      ...localhostCandidates(ports),
-      ...lanCandidates(config.extraHosts, ports),
-    ];
-    const hits = await probeMany(candidates, config, signal, 32);
-    let registered = 0;
-    await mapLimit(hits, 8, async (live) => {
-      const source: DiscoveredServer["source"] = config.extraHosts.includes(live.host)
-        ? "config"
-        : "localhost";
-      if (await resolveLive(live, source, signal)) registered++;
-    });
-    return registered;
-  }
-
-  async function fullScan(
-    signal?: AbortSignal,
-    notify?: (msg: string, kind: "info" | "warning" | "error") => void,
-  ): Promise<{ registered: number; scannedHosts: number }> {
-    const enabled = SERVER_DEFS.filter((d) => !config.disabledTypes.includes(d.type));
-    const ports = uniquePorts(enabled.map((d) => d.ports));
-    const foundIds = new Set<string>();
-    let scannedHosts = 0;
-
-    async function collect(
-      hits: LiveOrigin[],
-      sourceFor: (live: LiveOrigin) => DiscoveredServer["source"],
-    ): Promise<void> {
-      await mapLimit(hits, 8, async (live) => {
-        const id = await resolveLive(live, sourceFor(live), signal);
-        if (id) foundIds.add(id);
-      });
-    }
-
-    // Phase 0: localhost + configured hosts (so rescan covers same-laptop too).
-    {
-      const candidates = [
-        ...localhostCandidates(ports),
-        ...lanCandidates(config.extraHosts, ports),
-      ];
-      scannedHosts += 1 + config.extraHosts.length;
-      const hits = await probeMany(candidates, config, signal, 32);
-      await collect(hits, (live) =>
-        config.extraHosts.includes(live.host) ? "config" : "localhost",
-      );
-    }
-
-    // Phase 1: LAN live hosts via arp (fast, no blind sweep).
-    if (config.enableLanScan) {
-      const arpHosts = await getArpLiveHosts(execFn);
-      scannedHosts += arpHosts.length;
-      if (arpHosts.length > 0) {
-        const hits = await probeMany(lanCandidates(arpHosts, ports), config, signal, 64);
-        await collect(hits, () => "lan");
-      }
-      // Phase 1b: /24 sweep fallback on common ports if nothing found so far.
-      if (foundIds.size === 0) {
-        const bases = localSlash24Bases();
-        const sweepPorts = ports.filter((p) => COMMON_FALLBACK_PORTS.includes(p));
-        for (const base of bases.slice(0, 2)) {
-          const sweep = slash24Candidates(base, sweepPorts.length > 0 ? sweepPorts : ports.slice(0, 9));
-          scannedHosts += 254;
-          const hits = await probeMany(sweep, config, signal, 64);
-          await collect(hits, () => "lan");
-          if (foundIds.size > 0) break;
-        }
-      }
-    }
-
-    // Phase 2: Tailscale peers — always scanned (LAN hits no longer skip it),
-    // so LAN + Tailscale servers coexist as separate providers.
-    if (config.enableTailscale) {
-      const tails = await getTailscaleHosts(execFn);
-      if (tails.length > 0) {
-        scannedHosts += tails.length;
-        const hits = await probeMany(lanCandidates(tails, ports), config, signal, 32);
-        await collect(hits, () => "tailscale");
-      } else if (foundIds.size === 0) {
-        notify?.("pi-local-server: no LAN servers and no Tailscale peers detected.", "warning");
-      }
-    }
-
-    if (foundIds.size === 0) {
-      notify?.(
-        "pi-local-server: scan found nothing. Check server is running + reachable, then /local-server hosts.",
-        "warning",
-      );
-    }
-    await saveCache(records);
-    return { registered: foundIds.size, scannedHosts };
+  /** Register a freshly discovered server as soon as it is identified. */
+  function scanContext(signal?: AbortSignal): ScanContext {
+    return {
+      config,
+      exec: execFn,
+      ...(signal ? { signal } : {}),
+      hostNames,
+      onFound: ({ providerId, server, models }: FoundServer) => {
+        records.set(providerId, { server, models });
+        publishProvider(providerId);
+      },
+    };
   }
 
   function statusText(): string {
@@ -255,58 +164,30 @@ export default async function (pi: ExtensionAPI) {
     }
     const lines: string[] = [`pi-local-server: ${records.size} provider(s)`];
     for (const [id, rec] of records) {
-      const estimated = rec.models.filter((m) => m.contextSource === "estimated").length;
-      const est = estimated > 0 ? ` (${estimated} ctx estimated)` : "";
+      const inexact = rec.models.filter((m) => !isExactContext(m.contextSource)).length;
+      const est = inexact > 0 ? ` (${inexact} ctx not verified)` : "";
       lines.push(`- ${id} @ ${rec.server.origin} [${rec.server.type}/${rec.server.source}] ${rec.models.length} model(s)${est}`);
     }
     return lines.join("\n");
   }
 
-  // Fast localhost pass during startup so providers exist for /model immediately,
-  // plus cache restore so a new laptop is usable before the network sweep ends.
-  // Full LAN + Tailscale sweep runs in session_start (background, non-blocking).
+  // Cache restore first, so a new laptop is usable before the network sweep ends; then a fast
+  // pass over this machine and the configured hosts. The full LAN + Tailscale sweep runs in
+  // session_start (background).
   try {
-    const cached = await loadCache();
-    for (const entry of cached) {
+    for (const entry of await loadCache(cacheFilePath())) {
       const server: DiscoveredServer = { ...entry.server, source: "cache" };
-      if (config.disabledTypes.includes(server.type)) continue;
+      if (config.disabledTypes.includes(server.type) || entry.models.length === 0) continue;
       const providerId = providerIdFor(server);
-      const serverKey = `${server.host}:${server.port}`;
-      const models = entry.models;
-      if (models.length === 0) continue;
-      records.set(providerId, { server, models });
-      pi.registerProvider(providerId, {
-        name: providerNameFor(server),
-        baseUrl: server.baseUrl,
-        apiKey: apiKeyFor(server.host, server.port, config),
-        api: "openai-completions",
-        models: toProviderModels(models),
-        async refreshModels({ signal }: { signal: AbortSignal }) {
-          try {
-            const hits = await probeMany(
-              [{ host: server.host, port: server.port }],
-              config,
-              signal,
-              4,
-            );
-            if (hits.length === 0) return toProviderModels(models);
-            const fresh = await discoverModels(hits[0]!, fingerprint(hits[0]!).type, serverKey, config, signal);
-            if (fresh.length === 0) return toProviderModels(models);
-            records.set(providerId, { server, models: fresh });
-            await saveCache(records);
-            return toProviderModels(fresh);
-          } catch {
-            return toProviderModels(models);
-          }
-        },
-      });
+      records.set(providerId, { server, models: entry.models });
+      publishProvider(providerId);
     }
   } catch {
     // Cache restore never breaks startup.
   }
   try {
-    await fastScan();
-    await saveCache(records);
+    await scanLocal(scanContext());
+    await persist();
   } catch {
     // Startup must never fail because a local server is down.
   }
@@ -335,16 +216,16 @@ export default async function (pi: ExtensionAPI) {
         if (ctx.hasUI) ctx.ui.setStatus("pi-local-server", "Scanning LAN + Tailscale…");
         try {
           const before = new Set(records.keys());
-          const { registered, scannedHosts } = await fullScan(ctx.signal ?? undefined, (msg, kind) => {
-            if (ctx.hasUI) ctx.ui.notify(msg, kind);
-          });
+          const { found, scannedHosts, warnings } = await scanAll(scanContext(ctx.signal ?? undefined));
+          await persist();
           const added = [...records.keys()].filter((k) => !before.has(k)).length;
           if (ctx.hasUI) {
+            for (const w of warnings) ctx.ui.notify(`pi-local-server: ${w}`, "warning");
             ctx.ui.notify(
-              registered > 0
-                ? `pi-local-server: found ${registered} provider(s) (${added} new, ${scannedHosts} hosts scanned). See /model.`
+              found.size > 0
+                ? `pi-local-server: found ${found.size} provider(s) (${added} new, ${scannedHosts} hosts scanned). See /model.`
                 : "pi-local-server: no servers found. Check server is running + reachable, then /local-server hosts.",
-              registered > 0 ? "info" : "warning",
+              found.size > 0 ? "info" : "warning",
             );
           }
         } finally {
@@ -361,14 +242,15 @@ export default async function (pi: ExtensionAPI) {
     if (backgroundRunning) return;
     // Always background-sweep (even if localhost/cache already registered) so a
     // new laptop finds the main PC on LAN/Tailscale without manual rescan.
-    // registerLive() is idempotent per providerId, so this never duplicates.
+    // Registration is idempotent per providerId, so this never duplicates.
     const before = records.size;
     backgroundRunning = true;
     if (ctx.hasUI) ctx.ui.setStatus("pi-local-server", "Scanning LAN for local servers…");
     try {
-      const { registered } = await fullScan(ctx.signal ?? undefined);
-      if (registered > before && ctx.hasUI) {
-        ctx.ui.notify(`pi-local-server: found ${registered} server(s). Run /model to select.`, "info");
+      const { found } = await scanAll(scanContext(ctx.signal ?? undefined));
+      await persist();
+      if (found.size > before && ctx.hasUI) {
+        ctx.ui.notify(`pi-local-server: found ${found.size} server(s). Run /model to select.`, "info");
       }
     } catch {
       // Background discovery never breaks the session.
@@ -380,6 +262,19 @@ export default async function (pi: ExtensionAPI) {
         // ignore teardown races
       }
     }
+  });
+
+  // The context window is not a constant: it changes whenever a server is restarted or a
+  // model reloaded with another context size. Re-check the active local model just before
+  // the agent uses it (throttled), and right when the user picks it.
+  pi.on("before_agent_start", async (_event, ctx) => {
+    await refreshActive(ctx.model, 5000, (m) => ctx.hasUI && ctx.ui.notify(m, "info"));
+  });
+  pi.on("turn_start", async (_event, ctx) => {
+    await refreshActive(ctx.model, 5000, (m) => ctx.hasUI && ctx.ui.notify(m, "info"));
+  });
+  pi.on("model_select", async (event, ctx) => {
+    await refreshActive(event.model, 0, (m) => ctx.hasUI && ctx.ui.notify(m, "info"));
   });
 
   pi.on("session_shutdown", async () => {

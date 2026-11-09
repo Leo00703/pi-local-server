@@ -1,0 +1,178 @@
+{
+  "data": [
+    {
+      "id": "org/vision-small:Q8_0",
+      "aliases": [],
+      "tags": [
+        "decision"
+      ],
+      "object": "model",
+      "owned_by": "llamacpp",
+      "created": 1794258450,
+      "status": {
+        "value": "unloaded",
+        "args": [
+          "/home/user/.llama-app/llama",
+          "serve",
+          "--host",
+          "127.0.0.1",
+          "--log-colors",
+          "off",
+          "--port",
+          "0",
+          "--sleep-idle-seconds",
+          "900",
+          "--spec-default",
+          "--tags",
+          "decision",
+          "--alias",
+          "org/vision-small:Q8_0",
+          "--agent",
+          "--ctx-size",
+          "4096",
+          "--cache-type-k",
+          "q8_0",
+          "--cache-type-v",
+          "q8_0",
+          "--fit-target",
+          "2048",
+          "--model",
+          "/home/user/.cache/huggingface/hub/models--org--vision-small/snapshots/36707287af55fc9ab03e34bda6a6cc82075499b1/vision-small-Q8_0.gguf",
+          "--mmproj",
+          "/home/user/.cache/huggingface/hub/models--org--vision-small/snapshots/36707287af55fc9ab03e34bda6a6cc82075499b1/mmproj-vision-small-Q8_0.gguf"
+        ],
+        "preset": "[org/vision-small:Q8_0]\nlog-colors = off\nsleep-idle-seconds = 900\nspec-default = 1\nagent = 1\nctx-size = 4096\ncache-type-k = q8_0\ncache-type-v = q8_0\nfit-target = 2048\nmodel = /home/user/.cache/huggingface/hub/models--org--vision-small/snapshots/36707287af55fc9ab03e34bda6a6cc82075499b1/vision-small-Q8_0.gguf\nmmproj = /home/user/.cache/huggingface/hub/models--org--vision-small/snapshots/36707287af55fc9ab03e34bda6a6cc82075499b1/mmproj-vision-small-Q8_0.gguf\n\n"
+      },
+      "architecture": {
+        "input_modalities": [
+          "text",
+          "image",
+          "audio"
+        ],
+        "output_modalities": [
+          "decisions"
+        ]
+      },
+      "source": "preset",
+      "can_remove": false,
+      "context_length": 128000
+    },
+    {
+      "id": "org/text-large:Q8_0",
+      "aliases": [],
+      "tags": [
+        "chat"
+      ],
+      "object": "model",
+      "owned_by": "llamacpp",
+      "created": 1794258450,
+      "status": {
+        "value": "unloaded",
+        "args": [
+          "/home/user/.llama-app/llama",
+          "serve",
+          "--host",
+          "127.0.0.1",
+          "--log-colors",
+          "off",
+          "--port",
+          "61092",
+          "--sleep-idle-seconds",
+          "900",
+          "--spec-default",
+          "--tags",
+          "chat",
+          "--alias",
+          "org/text-large:Q8_0",
+          "--agent",
+          "--ctx-size",
+          "131072",
+          "--cache-type-k",
+          "q8_0",
+          "--cache-type-v",
+          "q8_0",
+          "--fit-target",
+          "2048",
+          "--model",
+          "/home/user/.cache/huggingface/hub/models--org--text-large/snapshots/lmstudio-link/text-large-Q8_0.gguf"
+        ],
+        "preset": "[org/text-large:Q8_0]\nlog-colors = off\nsleep-idle-seconds = 900\nspec-default = 1\nagent = 1\nctx-size = 131072\ncache-type-k = q8_0\ncache-type-v = q8_0\nfit-target = 2048\nmodel = /home/user/.cache/huggingface/hub/models--org--text-large/snapshots/lmstudio-link/text-large-Q8_0.gguf\n\n"
+      },
+      "architecture": {
+        "input_modalities": [
+          "text"
+        ],
+        "output_modalities": [
+          "text"
+        ]
+      },
+      "source": "preset",
+      "can_remove": false,
+      "context_length": 1048576
+    },
+    {
+      "id": "org/vision-medium:Q8_0",
+      "aliases": [],
+      "tags": [
+        "chat"
+      ],
+      "object": "model",
+      "owned_by": "llamacpp",
+      "created": 1794258450,
+      "status": {
+        "value": "unloaded",
+        "args": [
+          "/home/user/.llama-app/llama",
+          "serve",
+          "--host",
+          "127.0.0.1",
+          "--log-colors",
+          "off",
+          "--port",
+          "0",
+          "--sleep-idle-seconds",
+          "900",
+          "--spec-default",
+          "--model-draft",
+          "/home/user/.cache/huggingface/hub/models--org--vision-medium/snapshots/a69f018d7678a2b9f5e705f8903d6fb29b9b25dc/mtp-vision-medium-Q8_0.gguf",
+          "--spec-draft-n-max",
+          "3",
+          "--spec-type",
+          "draft-mtp",
+          "--tags",
+          "chat",
+          "--alias",
+          "org/vision-medium:Q8_0",
+          "--agent",
+          "--ctx-size",
+          "8192",
+          "--cache-type-k",
+          "q8_0",
+          "--cache-type-v",
+          "q8_0",
+          "--fit-target",
+          "2048",
+          "--model",
+          "/home/user/.cache/huggingface/hub/models--org--vision-medium/snapshots/a69f018d7678a2b9f5e705f8903d6fb29b9b25dc/vision-medium-Q8_0.gguf",
+          "--mmproj",
+          "/home/user/.cache/huggingface/hub/models--org--vision-medium/snapshots/a69f018d7678a2b9f5e705f8903d6fb29b9b25dc/mmproj-vision-medium-Q8_0.gguf"
+        ],
+        "preset": "[org/vision-medium:Q8_0]\nlog-colors = off\nsleep-idle-seconds = 900\nspec-default = 1\nmodel-draft = /home/user/.cache/huggingface/hub/models--org--vision-medium/snapshots/a69f018d7678a2b9f5e705f8903d6fb29b9b25dc/mtp-vision-medium-Q8_0.gguf\nspec-draft-n-max = 3\nspec-type = draft-mtp\nagent = 1\nctx-size = 8192\ncache-type-k = q8_0\ncache-type-v = q8_0\nfit-target = 2048\nmodel = /home/user/.cache/huggingface/hub/models--org--vision-medium/snapshots/a69f018d7678a2b9f5e705f8903d6fb29b9b25dc/vision-medium-Q8_0.gguf\nmmproj = /home/user/.cache/huggingface/hub/models--org--vision-medium/snapshots/a69f018d7678a2b9f5e705f8903d6fb29b9b25dc/mmproj-vision-medium-Q8_0.gguf\n\n"
+      },
+      "architecture": {
+        "input_modalities": [
+          "text",
+          "image",
+          "audio"
+        ],
+        "output_modalities": [
+          "text"
+        ]
+      },
+      "source": "preset",
+      "can_remove": false,
+      "context_length": 131072
+    }
+  ],
+  "object": "list"
+}

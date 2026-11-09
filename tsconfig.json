@@ -9,7 +9,14 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["extensions/**/*"]
+  "include": [
+    "core/**/*",
+    "extensions/**/*",
+    "test/**/*",
+    "opencode/src/**/*"
+  ]
 }

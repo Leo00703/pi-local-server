@@ -1,0 +1,27 @@
+{
+  "default_generation_settings": {
+    "n_ctx": 204800,
+    "params": {
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "top_k": 20,
+      "n_predict": -1
+    }
+  },
+  "total_slots": 1,
+  "model_alias": "strata-model",
+  "chat_template": "{%- if enable_thinking is defined %}<think>{%- endif %}",
+  "chat_template_caps": {
+    "supports_tools": true,
+    "supports_tool_calls": true,
+    "supports_system_role": true,
+    "supports_parallel_tool_calls": true,
+    "supports_preserve_reasoning": true
+  },
+  "modalities": {
+    "vision": true
+  },
+  "models_autoload": true,
+  "is_sleeping": false,
+  "build_info": "Strata 0.1.57"
+}

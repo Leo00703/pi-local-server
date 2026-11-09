@@ -1,0 +1,25 @@
+{
+  "data": [
+    {
+      "id": "loaded-llm",
+      "object": "model",
+      "owned_by": "organization_owner"
+    },
+    {
+      "id": "unloaded-llm",
+      "object": "model",
+      "owned_by": "organization_owner"
+    },
+    {
+      "id": "vision-llm",
+      "object": "model",
+      "owned_by": "organization_owner"
+    },
+    {
+      "id": "text-embedding-test",
+      "object": "model",
+      "owned_by": "organization_owner"
+    }
+  ],
+  "object": "list"
+}

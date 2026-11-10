@@ -62,6 +62,20 @@ describe("private-address policy", () => {
     assert.ok(seen.some((h) => h.startsWith("example.org")));
   });
 
+  it("ignores the Windows 'Interface:' headers, which are this PC's own addresses", () => {
+    const windows = [
+      "Interface: 192.168.1.50 --- 0x5",
+      "  Internet Address      Physical Address      Type",
+      "  192.168.1.1           aa-bb-cc-dd-ee-01     dynamic",
+      "  192.168.1.77          aa-bb-cc-dd-ee-02     dynamic",
+      "  224.0.0.22            01-00-5e-00-00-16     static",
+      "  255.255.255.255       ff-ff-ff-ff-ff-ff     static",
+      "Interface: 100.64.0.1 --- 0x9",
+      "  100.64.0.2            aa-bb-cc-dd-ee-03     dynamic",
+    ].join("\r\n");
+    assert.deepEqual(parseArpIps(windows), ["192.168.1.1", "192.168.1.77", "100.64.0.2"]);
+  });
+
   it("drops multicast addresses from the ARP table", () => {
     const out = parseArpIps("? (192.168.1.1) at aa:bb on en0\n? (224.0.0.251) at 1:0:5e on en0\n? (239.255.255.250) at 1:0:5e on en0\n? (192.168.1.255) at ff on en0");
     assert.deepEqual(out, ["192.168.1.1"]);

@@ -109,13 +109,16 @@ export async function probeLmStudioModels(
 export function parseArpIps(output: string): string[] {
   const ips = new Set<string>();
   const re = /(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(output)) !== null) {
-    const ip = m[1]!;
-    if (ip.endsWith(".255") || ip === "0.0.0.0") continue;
-    const first = Number(ip.split(".")[0]);
-    if (first >= 224) continue; // multicast / reserved: never a model server
-    ips.add(ip);
+  for (const line of output.split(/\r?\n/)) {
+    // Windows prints "Interface: <this PC's own address> --- 0x5" before each block: not a neighbour.
+    if (/^\s*Interface:/i.test(line)) continue;
+    for (const m of line.matchAll(re)) {
+      const ip = m[1]!;
+      if (ip.endsWith(".255") || ip === "0.0.0.0") continue;
+      const first = Number(ip.split(".")[0]);
+      if (first >= 224) continue; // multicast / reserved: never a model server
+      ips.add(ip);
+    }
   }
   return [...ips];
 }

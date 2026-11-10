@@ -57,12 +57,40 @@ describe("scanAll", () => {
     assert.equal(servers[0]!.server.hostName, "DESKTOP");
   });
 
+  it("still merges them when Tailscale only reports the direct address after the first probes", async () => {
+    stubLlamaHosts({ "192.168.1.50": 8192, "100.64.0.2": 8192 });
+    const idle = JSON.parse(tailscaleStatus) as { Peer: Record<string, { CurAddr?: string }> };
+    for (const peer of Object.values(idle.Peer)) peer.CurAddr = "";
+    let statusCalls = 0;
+    const lateDirect = async (cmd: string, args: string[]) => {
+      if (args[0] === "status") return { stdout: ++statusCalls === 1 ? JSON.stringify(idle) : tailscaleStatus };
+      return exec(cmd, args);
+    };
+    const { found } = await scanAll({ config: { ...loadConfig({}), extraHosts: [] }, exec: lateDirect, hostNames: new Map() });
+    assert.deepEqual([...found.values()].map((f) => f.server.host), ["100.64.0.2"]);
+  });
+
   it("keeps a LAN-only machine that is not a Tailscale peer", async () => {
     stubLlamaHosts({ "192.168.1.50": 8192, "100.64.0.2": 8192, "192.168.1.77": 4096 });
     const servers = await run();
     const hosts = servers.map((s) => s.server.host).sort();
     assert.deepEqual(hosts, ["100.64.0.2", "192.168.1.77"]);
     assert.equal(servers.find((s) => s.server.host === "192.168.1.77")!.models[0]!.contextWindow, 4096);
+  });
+
+  it("does not register this machine a second time under its own LAN or tailnet address", async () => {
+    // Windows' arp lists this PC's own addresses as 'Interface:' headers; both answer, as localhost does.
+    stubLlamaHosts({ "127.0.0.1": 8192, "192.168.1.50": 8192, "100.64.0.9": 8192 });
+    const windowsArp = async (cmd: string, args: string[]) =>
+      cmd === "arp"
+        ? { stdout: "Interface: 192.168.1.50 --- 0x5\r\n  192.168.1.1  aa-bb  dynamic\r\nInterface: 100.64.0.9 --- 0x9\r\n  100.64.0.99  aa-cc  dynamic\r\n" }
+        : exec(cmd, args);
+    const { found } = await scanAll({
+      config: { ...loadConfig({}), extraHosts: [], enableTailscale: false },
+      exec: windowsArp,
+      ownAddresses: ["192.168.1.50", "100.64.0.9"],
+    });
+    assert.deepEqual([...found.values()].map((f) => f.server.host), ["127.0.0.1"]);
   });
 
   it("still finds the tailnet server when arp hangs or fails", async () => {

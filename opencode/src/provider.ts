@@ -48,3 +48,73 @@ export function toOpenCodeProvider(found: FoundServer, config: LocalServerConfig
     models: Object.fromEntries(models.map((m) => [m.id, toOpenCodeModel(m)])),
   };
 }
+
+// --- OpenCode 2.x -----------------------------------------------------------------------------
+// The 2.x plugin API (setup + ctx.provider.transform) takes Provider.Info / Model.Info records.
+// Shapes follow @opencode/schema (packages/schema/src/provider.ts and model.ts at v2.2.6); plain
+// objects are enough, the branded ids are ordinary strings at runtime.
+
+export interface V2ModelInfo {
+  id: string;
+  modelID: string;
+  providerID: string;
+  name: string;
+  capabilities: { tools: boolean; input: string[]; output: string[]; temperature: boolean };
+  compatibility: { maxTokensField: "max_tokens" };
+  variants: never[];
+  time: { released: number };
+  cost: never[];
+  status: "active";
+  enabled: boolean;
+  limit: { context: number; output: number };
+}
+
+export interface V2ProviderInfo {
+  id: string;
+  name: string;
+  activation: "enabled";
+  package: string;
+  settings: { baseURL: string; apiKey: string; timeout: false };
+}
+
+export interface V2ProviderEntry {
+  info: V2ProviderInfo;
+  models: V2ModelInfo[];
+}
+
+export function toV2Entry(found: FoundServer, config: LocalServerConfig): V2ProviderEntry {
+  const { server, models, providerId } = found;
+  return {
+    info: {
+      id: providerId,
+      name: providerNameFor(server),
+      activation: "enabled",
+      package: "@opencode/ai/providers/openai-compatible",
+      settings: {
+        baseURL: server.baseUrl,
+        apiKey: apiKeyFor(server.host, server.port, config),
+        // Long local prefills must not hit the default request timeout.
+        timeout: false,
+      },
+    },
+    models: models.map((m) => ({
+      id: m.id,
+      modelID: m.id,
+      providerID: providerId,
+      name: m.name ?? m.id,
+      capabilities: {
+        tools: true,
+        input: m.vision ? ["text", "image"] : ["text"],
+        output: ["text"],
+        temperature: true,
+      },
+      compatibility: { maxTokensField: "max_tokens" },
+      variants: [],
+      time: { released: 0 },
+      cost: [],
+      status: "active",
+      enabled: true,
+      limit: { context: m.contextWindow, output: m.maxTokens },
+    })),
+  };
+}

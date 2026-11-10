@@ -14,7 +14,7 @@ import {
 } from "../../core/config.js";
 import { probeMany, type ExecFn } from "../../core/discovery.js";
 import { discoverModels, fingerprint } from "../../core/detectors.js";
-import { scanAll, scanLocal, type FoundServer, type ScanContext } from "../../core/scan.js";
+import { sameModels, scanAll, scanLocal, type FoundServer, type ScanContext } from "../../core/scan.js";
 
 interface ProviderRecord {
   server: DiscoveredServer;
@@ -23,14 +23,6 @@ interface ProviderRecord {
 
 /** Engines known to honour `stream_options.include_usage` (exact token accounting drives compaction). */
 const STREAM_USAGE_TYPES = new Set<ServerType>(["llamacpp", "lmstudio", "ollama", "vllm", "sglang"]);
-
-function sameModels(a: DiscoveredModel[], b: DiscoveredModel[]): boolean {
-  if (a.length !== b.length) return false;
-  const key = (m: DiscoveredModel) =>
-    `${m.id}|${m.contextWindow}|${m.maxTokens}|${m.vision ? 1 : 0}|${m.reasoning ? 1 : 0}`;
-  const left = new Set(a.map(key));
-  return b.every((m) => left.has(key(m)));
-}
 
 function toProviderModels(models: DiscoveredModel[], type: ServerType) {
   return models.map((m) => ({

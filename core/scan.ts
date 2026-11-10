@@ -1,5 +1,6 @@
 import {
   SERVER_DEFS,
+  localIPv4s,
   providerIdFor,
   type DiscoveredModel,
   type DiscoveredServer,
@@ -37,6 +38,8 @@ export interface ScanContext {
   hostNames?: Map<string, string>;
   /** Called for every server as soon as it is identified. */
   onFound?: (found: FoundServer) => void;
+  /** This machine's own addresses (default: its network interfaces). A server found there is the local one. */
+  ownAddresses?: Iterable<string>;
 }
 
 function enabledPorts(config: LocalServerConfig): number[] {
@@ -136,13 +139,15 @@ export async function scanAll(ctx: ScanContext): Promise<ScanResult> {
   // ways, and it must show up once (as its stable tailnet address), not as two providers.
   const lanFound = new Map<string, FoundServer>();
   const tailFound = new Map<string, FoundServer>();
+  // Never scan ourselves by LAN/tailnet address: it is the same server localhost already found.
+  const own = new Set(ctx.ownAddresses ?? localIPv4s());
   const peerLanAddresses = new Set<string>();
   let scannedHosts = 1 + config.extraHosts.length;
   let peerCount = 0;
 
   const lan = async () => {
     if (!config.enableLanScan) return;
-    const arpHosts = await withTimeout(getArpLiveHosts(ctx.exec), 2500, []);
+    const arpHosts = (await withTimeout(getArpLiveHosts(ctx.exec), 2500, [])).filter((h) => !own.has(h));
     scannedHosts += arpHosts.length;
     if (arpHosts.length > 0) {
       const hits = await probeMany(lanCandidates(arpHosts, ports), config, ctx.signal, 64);
@@ -172,9 +177,17 @@ export async function scanAll(ctx: ScanContext): Promise<ScanResult> {
 
   await Promise.all([lan(), tailnet()]);
 
+  // Tailscale only reports a peer's direct LAN address once traffic has flowed to it, and we have just
+  // probed every peer: read the status again so the same machine is not listed under both addresses.
+  if (config.enableTailscale) {
+    for (const peer of await withTimeout(getTailscalePeers(ctx.exec), 2500, [])) {
+      if (peer.lanAddress) peerLanAddresses.add(peer.lanAddress);
+    }
+  }
+
   const settle = (map: Map<string, FoundServer>, skipHosts?: Set<string>) => {
     for (const [id, f] of map) {
-      if (skipHosts?.has(f.server.host) || found.has(id)) continue;
+      if (own.has(f.server.host) || skipHosts?.has(f.server.host) || found.has(id)) continue;
       found.set(id, f);
       ctx.onFound?.(f);
     }
@@ -217,4 +230,13 @@ export async function verifyKnown(
     if (found) out.set(found.providerId, found);
   });
   return out;
+}
+
+/** Two model lists that matter the same to an agent: ids, context, output budget, vision, reasoning. */
+export function sameModels(a: DiscoveredModel[], b: DiscoveredModel[]): boolean {
+  if (a.length !== b.length) return false;
+  const key = (m: DiscoveredModel) =>
+    `${m.id}|${m.contextWindow}|${m.maxTokens}|${m.vision ? 1 : 0}|${m.reasoning ? 1 : 0}`;
+  const left = new Set(a.map(key));
+  return b.every((m) => left.has(key(m)));
 }

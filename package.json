@@ -46,7 +46,8 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
-    "build:opencode": "esbuild opencode/src/index.ts --bundle --platform=node --format=esm --target=node22 --outfile=opencode/dist/index.js --external:@opencode-ai/plugin"
+    "build:opencode": "esbuild opencode/src/index.ts --bundle --platform=node --format=esm --target=node22 --outfile=opencode/dist/index.js --external:@opencode-ai/plugin",
+    "live-check": "tsx scripts/live-check.mts"
   },
   "engines": {
     "node": ">=22.19.0"

@@ -4,6 +4,10 @@ OpenCode plugin that finds the local LLM servers you already run — on this mac
 
 Supported: llama.cpp (including router mode / the Llama-macOS app), LM Studio, Strata, Ollama, vLLM, SGLang, Jan, llama-swap and other OpenAI-compatible servers. Shares its discovery code with [`pi-local-server`](../README.md), the same extension for Pi.
 
+## Which OpenCode versions
+
+Works with both plugin generations: OpenCode **1.x** (config hook, read when OpenCode loads its config) and **2.x** (the current Desktop builds; `setup` + `provider.transform`). On 2.x the providers are also refreshed every minute while OpenCode runs, so a context window follows a server that was restarted with another size, and servers started after OpenCode show up within a few minutes. Tested with 1.19.5 and 2.2.6, on macOS and Windows 11.
+
 ## Install
 
 Add the plugin once per device, in `~/.config/opencode/opencode.jsonc` (Windows: `%USERPROFILE%\.config\opencode\opencode.jsonc`):
@@ -16,7 +20,7 @@ Add the plugin once per device, in `~/.config/opencode/opencode.jsonc` (Windows:
 
 Nothing else. Every time OpenCode loads its config the plugin looks for servers and registers one provider per server, named like `Strata (DESKTOP 100.64.0.2:8080)`; pick the model from the model list.
 
-Alternatively, copy the built `dist/index.js` to `~/.config/opencode/plugins/local-server.js`; OpenCode loads files from that folder by itself.
+Alternatively (and this is the simplest, it needs no config edit), copy the built `dist/index.js` to `~/.config/opencode/plugins/local-server.js` (Windows: `%USERPROFILE%\.config\opencode\plugins\local-server.js`); OpenCode loads `.js` files from that folder by itself. Restart OpenCode afterwards. On 2.x the config key is `plugins` instead of `plugin` (per the OpenCode docs; not verified here), the folder approach works on both.
 
 ## What it does
 
@@ -24,7 +28,7 @@ Alternatively, copy the built `dist/index.js` to `~/.config/opencode/plugins/loc
 - **Fast start.** After the first run, only this machine, Tailscale peers and the servers seen before are checked before OpenCode starts (about 1-2 s); the LAN sweep runs in the background and updates the cache.
 - **One provider per machine.** A machine reachable over both LAN and Tailscale is registered once, by its tailnet address.
 - **Safe by default.** Only private addresses are probed, redirects are never followed, and a real API key is only sent to a `host:port` you gave it for.
-- **If the server is restarted with a smaller context while OpenCode is running**, requests are limited to what fits and a warning is logged; restart OpenCode to refresh the limits.
+- **If the server is restarted with a smaller context while OpenCode is running**: on 2.x the limits are refreshed within a minute; on 1.x requests are limited to what fits and a warning is logged, restart OpenCode to refresh the limits.
 - It never replaces a provider you defined yourself, or one listed in `disabled_providers`.
 
 ## Options

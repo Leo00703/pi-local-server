@@ -7,8 +7,8 @@ import { loadCache, saveCache } from "../../core/cache.js";
 import { loadConfig, providerIdFor, type ConfigOverrides, type LocalServerConfig } from "../../core/config.js";
 import { discoverModels, fingerprint } from "../../core/detectors.js";
 import { probeMany, type ExecFn } from "../../core/discovery.js";
-import { scanAll, verifyKnown, type FoundServer } from "../../core/scan.js";
-import { toOpenCodeProvider } from "./provider.js";
+import { sameModels, scanAll, verifyKnown, type FoundServer } from "../../core/scan.js";
+import { toOpenCodeProvider, toV2Entry, type V2ProviderEntry } from "./provider.js";
 
 const run = promisify(execFile);
 
@@ -197,4 +197,67 @@ const server: Plugin = async (input, options) => {
   };
 };
 
-export default { id: "opencode-local-server", server } satisfies PluginModule;
+// --- OpenCode 2.x -----------------------------------------------------------------------------
+// 2.x replaced the hooks above with `Plugin.define({ id, setup(ctx) })`; a module may export both,
+// each OpenCode generation uses the one it knows. Here providers are registered through
+// ctx.provider.transform and refreshed with ctx.provider.reload(), so unlike 1.x the context
+// window follows a server that was restarted with another size while OpenCode keeps running.
+
+interface V2Context {
+  options?: Record<string, unknown>;
+  provider: {
+    transform(callback: (editor: { add(entry: V2ProviderEntry): void }) => void): Promise<unknown>;
+    reload(): Promise<void>;
+  };
+}
+
+const REFRESH_MS = 60_000;
+const FULL_SCAN_EVERY = 5; // every 5th refresh also looks for servers started after OpenCode
+
+async function setup(ctx: V2Context): Promise<() => void> {
+  const config = loadConfig(process.env, overridesFromOptions(ctx.options));
+  const debug = (message: string) => {
+    if (process.env.OPENCODE_LOCAL_SERVER_DEBUG) console.error(`[opencode-local-server] ${message}`);
+  };
+  let servers = new Map((await discover(config, { log: debug })).map((f) => [f.providerId, f] as const));
+
+  await ctx.provider.transform((editor) => {
+    for (const found of servers.values()) editor.add(toV2Entry(found, config));
+  });
+
+  let tick = 0;
+  let busy = false;
+  const timer = setInterval(() => {
+    if (busy) return;
+    busy = true;
+    void (async () => {
+      try {
+        const signal = AbortSignal.timeout(15_000);
+        const scanCtx = { config, exec, hostNames: new Map<string, string>(), signal };
+        const fresh = new Map(servers);
+        const full = ++tick % FULL_SCAN_EVERY === 0;
+        const seen = full
+          ? (await scanAll(scanCtx)).found
+          : await verifyKnown([...servers.values()], scanCtx);
+        for (const [id, f] of seen) fresh.set(id, f);
+        const changed =
+          fresh.size !== servers.size ||
+          [...fresh].some(([id, f]) => !servers.has(id) || !sameModels(servers.get(id)!.models, f.models));
+        if (!changed) return;
+        servers = fresh;
+        debug(`servers changed (${servers.size}); reloading providers`);
+        await ctx.provider.reload();
+        await saveCache(cacheFilePath(), [...servers.values()].map(({ server, models }) => ({ server, models })));
+      } catch {
+        // keep serving the last known providers
+      } finally {
+        busy = false;
+      }
+    })();
+  }, REFRESH_MS);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
+const definition = { id: "opencode-local-server", server, setup };
+export default definition satisfies PluginModule | typeof definition;

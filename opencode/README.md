@@ -25,6 +25,7 @@ Alternatively (and this is the simplest, it needs no config edit), copy the buil
 ## What it does
 
 - **Context is read from the server, every time.** llama.cpp: `--ctx-size` / `/props` (router mode and single model), Strata: `/props`, LM Studio: the context the model is loaded with. Never the model's training maximum unless nothing else exists. The model's `limit.context` and `limit.output` come from it, so compaction and output limits match the server.
+- **Servers that are off are not shown for ever.** The plugin remembers the servers it found; one that has not answered for 7 days is forgotten, and a machine remembered at two addresses is listed once.
 - **Fast start.** After the first run, only this machine, Tailscale peers and the servers seen before are checked before OpenCode starts (about 1-2 s); the LAN sweep runs in the background and updates the cache.
 - **One provider per machine.** A machine reachable over both LAN and Tailscale is registered once, by its tailnet address.
 - **Safe by default.** Only private addresses are probed, redirects are never followed, and a real API key is only sent to a `host:port` you gave it for.

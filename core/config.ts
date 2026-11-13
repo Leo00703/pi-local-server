@@ -251,7 +251,7 @@ export function apiKeyFor(
  * Bump when the shape or meaning of cached models changes, so entries written
  * by older versions (wrong ctx / maxTokens) are discarded instead of restored.
  */
-export const CACHE_VERSION = 2;
+export const CACHE_VERSION = 3;
 
 export function cacheFilePath(): string {
   return join(getAgentDir(), "pi-local-server-cache.json");

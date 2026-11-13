@@ -69,7 +69,7 @@ Shared ports (e.g. `8080`) are distinguished best-effort via `owned_by` / native
 | `PI_LOCAL_SERVER_NO_LAN` | — | Set `1` to skip LAN/ARP/sweep. |
 | `PI_LOCAL_SERVER_NO_TAILSCALE` | — | Set `1` to skip Tailscale. |
 
-Cache: `~/.pi/agent/pi-local-server-cache.json` (override dir with `PI_CODING_AGENT_DIR`). It is versioned: a cache written by an older release is ignored. Delete it for a clean slate.
+Cache: `~/.pi/agent/pi-local-server-cache.json` (override dir with `PI_CODING_AGENT_DIR`). It is versioned: a cache written by an older release is ignored. Each entry remembers when the server was last really seen: one not seen for 7 days is forgotten, and a machine remembered at two addresses (LAN and Tailscale) is kept once. Delete the file for a clean slate.
 
 ## Install
 

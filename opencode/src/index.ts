@@ -3,11 +3,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { Config, Plugin, PluginModule } from "@opencode-ai/plugin";
-import { loadCache, saveCache } from "../../core/cache.js";
+import { loadCache, sameMachineKey, saveCache } from "../../core/cache.js";
 import { loadConfig, providerIdFor, type ConfigOverrides, type LocalServerConfig } from "../../core/config.js";
 import { discoverModels, fingerprint } from "../../core/detectors.js";
 import { probeMany, type ExecFn } from "../../core/discovery.js";
-import { sameModels, scanAll, verifyKnown, type FoundServer } from "../../core/scan.js";
+import { sameModels, scanAll, toCacheEntry, verifyKnown, type FoundServer } from "../../core/scan.js";
 import { toOpenCodeProvider, toV2Entry, type V2ProviderEntry } from "./provider.js";
 
 const run = promisify(execFile);
@@ -101,17 +101,21 @@ export async function discover(
   const keep = (extra: Iterable<FoundServer>) => {
     const all = new Map(found);
     for (const f of extra) if (!all.has(f.providerId)) all.set(f.providerId, f);
+    // Remembered servers that did not answer are kept, but not as a second copy of a machine that
+    // did (its LAN address cached, its Tailscale address found now). Each keeps the time it was last
+    // really seen, so a server that has been gone for a week drops out (see loadCache).
+    const live = new Set([...all.values()].map((f) => sameMachineKey(f.server, f.models)));
     for (const entry of cached) {
       const id = providerIdFor(entry.server);
-      if (!all.has(id) && !config.disabledTypes.includes(entry.server.type) && entry.models.length > 0) {
-        all.set(id, { providerId: id, server: { ...entry.server, source: "cache" }, models: entry.models });
-      }
+      if (all.has(id) || config.disabledTypes.includes(entry.server.type) || entry.models.length === 0) continue;
+      if (live.has(sameMachineKey(entry.server, entry.models))) continue;
+      all.set(id, { providerId: id, server: { ...entry.server, source: "cache" }, models: entry.models, seenAt: entry.seenAt });
     }
     return all;
   };
 
   const result = keep([]);
-  await saveCache(cachePath, [...result.values()].map(({ server, models }) => ({ server, models })));
+  await saveCache(cachePath, [...result.values()].map(toCacheEntry));
 
   if (cached.length > 0 && config.enableLanScan) {
     // Not awaited: finds LAN servers for the next start without delaying this one.
@@ -121,7 +125,7 @@ export async function discover(
       .then(async (scan) => {
         const merged = keep(scan.found.values());
         for (const [id, f] of scan.found) merged.set(id, f);
-        await saveCache(cachePath, [...merged.values()].map(({ server, models }) => ({ server, models })));
+        await saveCache(cachePath, [...merged.values()].map(toCacheEntry));
       })
       .catch(() => {})
       .finally(() => clearTimeout(bgTimer));
@@ -247,7 +251,7 @@ async function setup(ctx: V2Context): Promise<() => void> {
         servers = fresh;
         debug(`servers changed (${servers.size}); reloading providers`);
         await ctx.provider.reload();
-        await saveCache(cacheFilePath(), [...servers.values()].map(({ server, models }) => ({ server, models })));
+        await saveCache(cacheFilePath(), [...servers.values()].map(toCacheEntry));
       } catch {
         // keep serving the last known providers
       } finally {

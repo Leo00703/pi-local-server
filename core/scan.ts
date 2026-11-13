@@ -20,6 +20,7 @@ import {
   type LiveOrigin,
 } from "./discovery.js";
 import { discoverModels, fingerprint } from "./detectors.js";
+import type { CacheEntry } from "./cache.js";
 
 const COMMON_FALLBACK_PORTS = [8080, 1234, 11434, 8000, 1337, 30000, 4000, 5000, 2242];
 
@@ -27,6 +28,8 @@ export interface FoundServer {
   providerId: string;
   server: DiscoveredServer;
   models: DiscoveredModel[];
+  /** When a live probe confirmed it (ms). Set by every scan; a server restored from the cache keeps its old value. */
+  seenAt?: number;
 }
 
 export interface ScanContext {
@@ -71,7 +74,7 @@ export async function resolveLive(
       source,
       ...(hostName ? { hostName } : {}),
     };
-    return { providerId: providerIdFor(server), server, models };
+    return { providerId: providerIdFor(server), server, models, seenAt: Date.now() };
   } catch {
     return null;
   }
@@ -230,6 +233,11 @@ export async function verifyKnown(
     if (found) out.set(found.providerId, found);
   });
   return out;
+}
+
+/** The cache line for a found server: confirmed now unless it carries the time of an earlier probe. */
+export function toCacheEntry(f: FoundServer): CacheEntry {
+  return { server: f.server, models: f.models, seenAt: f.seenAt ?? Date.now() };
 }
 
 /** Two model lists that matter the same to an agent: ids, context, output budget, vision, reasoning. */

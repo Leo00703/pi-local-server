@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { loadCache, saveCache } from "../../core/cache.js";
+import { loadCache, sameMachineKey, saveCache } from "../../core/cache.js";
 import {
   apiKeyFor,
   cacheFilePath,
@@ -19,6 +19,8 @@ import { sameModels, scanAll, scanLocal, type FoundServer, type ScanContext } fr
 interface ProviderRecord {
   server: DiscoveredServer;
   models: DiscoveredModel[];
+  /** When a live probe last confirmed it; a server restored from the cache keeps its old time. */
+  seenAt: number;
 }
 
 /** Engines known to honour `stream_options.include_usage` (exact token accounting drives compaction). */
@@ -56,7 +58,7 @@ export default async function (pi: ExtensionAPI) {
   };
 
   const persist = () =>
-    saveCache(cacheFilePath(), [...records.values()].map(({ server, models }) => ({ server, models })));
+    saveCache(cacheFilePath(), [...records.values()].map(({ server, models, seenAt }) => ({ server, models, seenAt })));
 
   /**
    * (Re)register a provider from its current record. Used for live discovery, cache
@@ -104,7 +106,8 @@ export default async function (pi: ExtensionAPI) {
     const fresh = await discoverModels(live, server.type, `${server.host}:${server.port}`, config, signal);
     if (fresh.length === 0) return { changed: false };
     const changed = !sameModels(rec.models, fresh);
-    if (changed) records.set(providerId, { server, models: fresh });
+    // Answered: it is alive now, whether or not its models changed.
+    records.set(providerId, { server, models: changed ? fresh : rec.models, seenAt: Date.now() });
     return { changed, before: rec.models, after: fresh };
   }
 
@@ -143,9 +146,22 @@ export default async function (pi: ExtensionAPI) {
       exec: execFn,
       ...(signal ? { signal } : {}),
       hostNames,
-      onFound: ({ providerId, server, models }: FoundServer) => {
-        records.set(providerId, { server, models });
+      onFound: ({ providerId, server, models, seenAt }: FoundServer) => {
+        records.set(providerId, { server, models, seenAt: seenAt ?? Date.now() });
         publishProvider(providerId);
+        // A remembered copy of the same machine under another address (its cached LAN address, now
+        // found at its Tailscale one) is a leftover: drop it so the machine is listed once.
+        const key = sameMachineKey(server, models);
+        for (const [otherId, other] of [...records]) {
+          if (otherId === providerId || other.server.source !== "cache") continue;
+          if (sameMachineKey(other.server, other.models) !== key) continue;
+          records.delete(otherId);
+          try {
+            pi.unregisterProvider(otherId);
+          } catch {
+            // already gone
+          }
+        }
       },
     };
   }
@@ -171,7 +187,7 @@ export default async function (pi: ExtensionAPI) {
       const server: DiscoveredServer = { ...entry.server, source: "cache" };
       if (config.disabledTypes.includes(server.type) || entry.models.length === 0) continue;
       const providerId = providerIdFor(server);
-      records.set(providerId, { server, models: entry.models });
+      records.set(providerId, { server, models: entry.models, seenAt: entry.seenAt });
       publishProvider(providerId);
     }
   } catch {

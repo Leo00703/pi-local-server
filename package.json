@@ -1,6 +1,6 @@
 {
   "name": "pi-local-server",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Pi extension that auto-discovers local LLM servers (llama.cpp, LM Studio, Strata, Ollama, vLLM, SGLang...) on this machine, your LAN and Tailscale, and registers each as a Pi provider with its real, always-current context window.",
   "type": "module",
   "license": "MIT",

@@ -1,6 +1,6 @@
 {
   "name": "opencode-local-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenCode plugin that auto-discovers local LLM servers (llama.cpp, LM Studio, Strata, Ollama, vLLM, SGLang...) on this machine, your LAN and Tailscale, with their real context windows.",
   "type": "module",
   "license": "MIT",

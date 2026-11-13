@@ -10,10 +10,35 @@
     "url": "git+https://github.com/Leo00703/pi-local-server.git",
     "directory": "opencode"
   },
-  "keywords": ["opencode", "opencode-plugin", "llm", "local-llm", "llama.cpp", "lm-studio", "strata", "ollama", "vllm", "tailscale"],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "llm",
+    "local-llm",
+    "llama.cpp",
+    "lm-studio",
+    "strata",
+    "ollama",
+    "vllm",
+    "tailscale"
+  ],
   "main": "./dist/index.js",
-  "exports": { ".": "./dist/index.js" },
-  "files": ["dist", "README.md"],
-  "peerDependencies": { "@opencode-ai/plugin": "*" },
-  "engines": { "node": ">=22.19.0" }
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "homepage": "https://github.com/Leo00703/pi-local-server/tree/main/opencode#readme",
+  "bugs": {
+    "url": "https://github.com/Leo00703/pi-local-server/issues"
+  }
 }

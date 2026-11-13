@@ -1,16 +1,23 @@
 name: Publish to npm
 
+# Two packages live in this repository and are released independently, each by its own tag:
+#   v0.2.0            -> pi-local-server        (repository root)
+#   opencode-v0.1.0   -> opencode-local-server  (opencode/)
+# The tag must match the version in the package's package.json, or the job stops before publishing.
+
 on:
   push:
     tags:
       - "v*"
+      - "opencode-v*"
 
 permissions:
   id-token: write # Required for npm OIDC trusted publishing
   contents: read
 
 jobs:
-  publish:
+  pi-local-server:
+    if: startsWith(github.ref_name, 'v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -19,5 +26,27 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
       - run: npm ci
+      - name: Tag matches package.json
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
       - run: npm run typecheck
+      - run: npm test
       - run: npm publish
+
+  opencode-local-server:
+    if: startsWith(github.ref_name, 'opencode-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+      - name: Tag matches opencode/package.json
+        run: test "opencode-v$(node -p "require('./opencode/package.json').version")" = "$GITHUB_REF_NAME"
+      - run: npm run typecheck
+      - run: npm test
+      - name: Bundle the plugin (core included, so the package has no other dependency)
+        run: npm run build:opencode
+      - run: npm publish
+        working-directory: opencode

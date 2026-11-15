@@ -1,8 +1,12 @@
 # opencode-local-server
 
+[![npm](https://img.shields.io/npm/v/opencode-local-server?color=cb3837)](https://www.npmjs.com/package/opencode-local-server)
+[![CI](https://github.com/Leo00703/pi-local-server/actions/workflows/ci.yml/badge.svg)](https://github.com/Leo00703/pi-local-server/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/Leo00703/pi-local-server)](https://github.com/Leo00703/pi-local-server/blob/main/LICENSE)
+
 OpenCode plugin that finds the local LLM servers you already run — on this machine, on your LAN and on your Tailscale network — and adds them to OpenCode as providers, with the **real context window** of every model. No `opencode.json` editing per machine.
 
-Supported: llama.cpp (including router mode / the Llama-macOS app), LM Studio, Strata, Ollama, vLLM, SGLang, Jan, llama-swap and other OpenAI-compatible servers. Shares its discovery code with [`pi-local-server`](../README.md), the same extension for Pi.
+Supported: llama.cpp (including router mode / the Llama-macOS app), LM Studio, Strata, Ollama, vLLM, SGLang, Jan, llama-swap and other OpenAI-compatible servers. Shares its discovery code with [`pi-local-server`](https://github.com/Leo00703/pi-local-server#readme), the same extension for Pi.
 
 ## Which OpenCode versions
 

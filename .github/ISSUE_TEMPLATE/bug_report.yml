@@ -1,0 +1,69 @@
+name: Bug report
+description: A server is not found, a context window is wrong, or something crashes
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Please remove IP addresses, hostnames, tailnet names and API keys** from anything you paste.
+  - type: dropdown
+    id: package
+    attributes:
+      label: Which package?
+      options:
+        - pi-local-server (Pi extension)
+        - opencode-local-server (OpenCode plugin)
+        - Both / not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      description: e.g. 0.2.1 (`pi list`, or the version in your OpenCode plugin cache)
+    validations:
+      required: true
+  - type: input
+    id: engine
+    attributes:
+      label: Server engine and version
+      description: e.g. llama.cpp b6000 (router mode), LM Studio 0.3.x, Strata, Ollama 0.x
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does the server run, relative to the client?
+      options:
+        - Same machine
+        - Same LAN
+        - Over Tailscale
+        - Added with PI_LOCAL_SERVER_HOSTS
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Client OS and Node/runtime version
+      description: e.g. Windows 11, macOS 15, Ubuntu 24.04
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: For a wrong context window, say what the server really runs with and what was shown.
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: Output of `/local-server status` (Pi) or `npm run live-check`
+      render: text
+  - type: textarea
+    id: answers
+    attributes:
+      label: Raw server answers (optional, anonymised)
+      description: The relevant parts of `GET /v1/models`, `GET /props` or the engine's native API. This lets us add a test fixture.
+      render: json

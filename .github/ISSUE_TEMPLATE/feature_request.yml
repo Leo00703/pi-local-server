@@ -1,0 +1,22 @@
+name: Feature or engine request
+description: Support a new engine, or suggest an improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What would you like?
+      description: For a new engine, give its name, default port and how it reports the loaded model and its context size.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What problem does it solve for you?
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else (links to the engine's docs, example answers)
